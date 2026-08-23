@@ -3,3 +3,6 @@ uvicorn[standard]>=0.30
 yt-dlp>=2024.12.13
 python-multipart>=0.0.9
 requests>=2.31
+python-dotenv>=1.0.0
+bilibili-api-python>=17.4.2
+curl_cffi>=0.16

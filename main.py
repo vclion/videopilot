@@ -14,6 +14,7 @@ from douyin import (
     extract_info as extract_douyin_info,
     is_douyin_url,
 )
+from ai_routes import router as ai_router
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -421,6 +422,9 @@ def download_file(task_id: str) -> FileResponse:
         media_type="application/octet-stream",
         filename=task.get("file_name") or file_path.name,
     )
+
+
+app.include_router(ai_router)
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

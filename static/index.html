@@ -9,6 +9,7 @@
     />
     <title>视频下载助手 - 粘贴链接，马上保存</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/ai-styles.css" />
   </head>
   <body>
     <div class="page-shell">
@@ -130,7 +131,36 @@
               </div>
             </div>
           </article>
-
+          <section class="ai-summary-section is-hidden" id="ai-summary-section" aria-label="AI 视频总结">
+            <div class="ai-summary-head">
+              <div>
+                <p class="ai-summary-kicker">AI SUMMARY</p>
+                <h2 class="ai-summary-title">AI 视频总结</h2>
+              </div>
+              <span class="ai-source-badge is-hidden" id="ai-source-badge"></span>
+            </div>
+            <div class="ai-summary-idle" id="ai-summary-idle">
+              <p class="ai-summary-desc">
+                基于视频字幕，一键提取核心观点、章节要点与金句，快速掌握长视频内容。
+              </p>
+              <button class="ai-summary-btn" id="ai-summary-btn" type="button">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+                </svg>
+                <span class="ai-summary-btn-label">生成 AI 总结</span>
+              </button>
+            </div>
+            <div class="ai-summary-loading is-hidden" id="ai-summary-loading">
+              <div class="ai-summary-spinner"></div>
+              <div>
+                <strong id="ai-loading-text">正在获取视频字幕</strong>
+                <p>根据视频长度不同，这一步通常需要几秒到几十秒</p>
+              </div>
+            </div>
+            <div class="ai-summary-result is-hidden" id="ai-summary-result"></div>
+            <div class="ai-summary-error is-hidden" id="ai-summary-error"></div>
+          </section>
           <article class="progress-card is-hidden" id="progress-card">
             <div class="progress-head">
               <div>
@@ -179,5 +209,6 @@
 
     <div class="toast-region" id="toast-region" aria-live="polite"></div>
     <script src="/app.js" defer></script>
+    <script src="/ai-summary.js" defer></script>
   </body>
 </html>
