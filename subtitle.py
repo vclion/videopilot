@@ -242,8 +242,18 @@ def _fetch_bilibili(url: str) -> dict[str, Any]:
     if BILIBILI_SESSDATA:
         try:
             return _fetch_bilibili_with_credential(ident)
-        except SubtitleError:
-            pass  # 登录态失败时退回匿名链路
+        except SubtitleError as exc:
+            message = str(exc)
+            if "暂无可用的字幕" in message:
+                raise SubtitleError(
+                    "该 B 站视频暂无可用的字幕（已尝试使用登录态获取；"
+                    "若 Cookie 已过期，请更新 .env 中的 BILIBILI_SESSDATA）"
+                ) from exc
+            if "登录态" in message:
+                raise SubtitleError(
+                    message + "（请检查 .env 中的 BILIBILI_SESSDATA 是否有效、未过期）"
+                ) from exc
+            raise
 
     return _fetch_bilibili_anonymous(ident)
 
