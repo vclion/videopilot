@@ -7,12 +7,12 @@ const state = {
 };
 
 const platformExamples = [
-  { name: "B站", placeholder: "粘贴 bilibili.com 视频链接" },
-  { name: "YouTube", placeholder: "粘贴 youtube.com/watch?v= 链接" },
-  { name: "抖音", placeholder: "粘贴 douyin.com 视频链接" },
-  { name: "小红书", placeholder: "粘贴 xiaohongshu.com 视频链接" },
-  { name: "X / Twitter", placeholder: "粘贴 x.com 或 twitter.com 链接" },
-  { name: "Instagram", placeholder: "粘贴 instagram.com 视频链接" },
+  { name: "B站", url: "https://www.bilibili.com" },
+  { name: "YouTube", url: "https://www.youtube.com" },
+  { name: "抖音", url: "https://www.douyin.com" },
+  { name: "小红书", url: "https://www.xiaohongshu.com" },
+  { name: "X / Twitter", url: "https://x.com" },
+  { name: "Instagram", url: "https://www.instagram.com" },
 ];
 
 const $ = (selector) => document.querySelector(selector);
@@ -95,6 +95,7 @@ function setButtonLoading(button, loading) {
 function setParseLoading(loading) {
   $("#parse-loading").classList.toggle("is-hidden", !loading);
   if (loading) {
+    $("#result-grid").classList.add("is-hidden");
     $("#result-card").classList.add("is-hidden");
   }
 }
@@ -124,7 +125,7 @@ function renderPlatformChips() {
   container.innerHTML = platformExamples
     .map(
       (item) =>
-        `<button class="platform-chip" type="button" data-placeholder="${escapeHtml(item.placeholder)}">${escapeHtml(item.name)}</button>`,
+        `<a class="platform-chip" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.name)}</a>`,
     )
     .join("");
 }
@@ -155,8 +156,10 @@ function renderResult(data) {
   }
 
   renderQualityOptions();
+  $("#result-grid").classList.remove("is-hidden");
   $("#result-card").classList.remove("is-hidden");
   $("#progress-card").classList.add("is-hidden");
+  window.dispatchEvent(new CustomEvent("video:parsed", { detail: data }));
   window.setTimeout(() => {
     $("#result-card").scrollIntoView({ behavior: "smooth", block: "center" });
   }, 80);
@@ -448,12 +451,6 @@ function init() {
   $("#audio-download-btn").addEventListener("click", handleAudioDownloadClick);
   $("#refresh-history").addEventListener("click", loadHistory);
 
-  $("#platform-chips").addEventListener("click", (event) => {
-    const chip = event.target.closest(".platform-chip");
-    if (!chip) return;
-    $("#url-input").placeholder = chip.dataset.placeholder;
-    $("#url-input").focus();
-  });
 }
 
 init();

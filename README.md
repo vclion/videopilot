@@ -71,3 +71,55 @@ BILIBILI_SESSDATA=
 - `GET /api/ai/export/{task_id}?fmt=md|txt`：导出总结
 
 > 说明：B 站大部分视频的 AI 字幕仅登录态可见，未配置 SESSDATA 时，仅能处理创作者上传的公开字幕；抖音无公开字幕，暂不支持 AI 总结。
+
+
+## SEO（搜索引擎优化）
+
+在 `.env` 中配置公开域名后，服务会自动生成并返回：
+
+- `/robots.txt`
+- `/sitemap.xml`
+- 首页 `canonical`、Open Graph、Twitter Card 和 `WebApplication` 结构化数据
+
+配置示例：
+
+```bash
+SITE_URL=https://your-domain.com
+```
+
+`SITE_URL` 末尾不要带斜杠。未配置时默认使用 `https://example.com`，上线前请替换为真实域名。
+
+
+## 会员与支付（当前为模拟支付）
+
+- 非会员无法使用 AI 视频总结，视频下载与解析保持免费。
+- 会员身份使用浏览器本地 `member_token` 标识，无需注册账号。
+- 数据保存在本地 `membership.db`（SQLite）。
+- 当前为模拟支付：点击“开通会员” → 选择支付宝或微信 → 打开模拟支付页 → 点击“模拟支付成功”即开通。
+
+### 配置
+
+```bash
+MEMBERSHIP_PLAN_DAYS=30
+MEMBERSHIP_PRICE_CENTS=990
+MEMBERSHIP_PLAN_NAME=30天会员
+```
+
+真实支付宝/微信支付接入时，需补充商户证书、密钥与回调地址；目前代码已预留订单与回调幂等结构。
+
+
+## 用户登录与会员绑定
+
+- 密码使用 bcrypt 哈希存储。
+- 登录后签发 JWT Token（携带用户 ID 与过期时间），接口通过依赖注入自动校验登录态。
+- 会员购买绑定到登录账号；注册采用邮箱 + 密码。
+- 初始管理员账号：`admin` / `wcldsg666`（邮箱 `admin@example.com`）。
+
+配置：
+
+```bash
+JWT_SECRET=请改成随机长字符串
+JWT_EXPIRES_MINUTES=10080
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=wcldsg666
+```

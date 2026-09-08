@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import glob
+import os
 import re
 import threading
 import time
@@ -9,6 +10,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yt_dlp
+import auth
+import membership
+from auth_routes import router as auth_router
+from member_routes import router as member_router
 from douyin import (
     download as download_douyin,
     extract_info as extract_douyin_info,
@@ -17,7 +22,7 @@ from douyin import (
 from ai_routes import router as ai_router
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -26,6 +31,14 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+SITE_NAME = "万能视频下载总结器"
+SITE_DESCRIPTION = "跨平台视频下载与 AI 视频总结工具，支持 B 站、YouTube、抖音、小红书等平台，粘贴链接即可下载高清 MP4 或 MP3，并自动生成结构化视频总结。"
+DEFAULT_SITE_URL = "https://example.com"
+
+
+def _site_url() -> str:
+    return os.getenv("SITE_URL", DEFAULT_SITE_URL).strip().rstrip("/")
 
 MAX_HISTORY = 50
 TASKS: dict[str, dict[str, Any]] = {}
@@ -43,6 +56,8 @@ class DownloadRequest(BaseModel):
 
 
 app = FastAPI(title="Free Videos Downloader", version="0.1.0")
+membership.init_db()
+auth.init_db()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -424,6 +439,50 @@ def download_file(task_id: str) -> FileResponse:
     )
 
 
+
+
+@app.get("/", include_in_schema=False)
+def index_page() -> HTMLResponse:
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("__SITE_URL__", _site_url()))
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt() -> Response:
+    agents = ["GPTBot", "ChatGPT-User", "OAI-SearchBot", "PerplexityBot", "ClaudeBot", "anthropic-ai", "Google-Extended", "Bingbot", "*"]
+    blocks = [f"User-agent: {agent}\nAllow: /\n" for agent in agents]
+    content = "\n".join(blocks) + "\n" + f"Sitemap: {_site_url()}/sitemap.xml\n"
+    return Response(content=content, media_type="text/plain")
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml() -> Response:
+    base = _site_url()
+    content = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    content += "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n"
+    content += f"  <url>\n    <loc>{base}/</loc>\n"
+    lastmod = time.strftime("%Y-%m-%d")
+    content += f"    <lastmod>{lastmod}</lastmod>\n"
+    content += "    <changefreq>weekly</changefreq>\n"
+    content += "    <priority>1.0</priority>\n"
+    content += "  </url>\n"
+    content += "</urlset>\n"
+    return Response(content=content, media_type="application/xml")
+
+@app.get("/llms.txt", include_in_schema=False)
+def llms_txt() -> Response:
+    content = (STATIC_DIR / "llms.txt").read_text(encoding="utf-8")
+    return Response(content=content.replace("__SITE_URL__", _site_url()), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/llms-full.txt", include_in_schema=False)
+def llms_full_txt() -> Response:
+    content = (STATIC_DIR / "llms-full.txt").read_text(encoding="utf-8")
+    return Response(content=content.replace("__SITE_URL__", _site_url()), media_type="text/plain; charset=utf-8")
+
+
+app.include_router(member_router)
+app.include_router(auth_router)
 app.include_router(ai_router)
 
 

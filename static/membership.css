@@ -1,0 +1,159 @@
+/* 会员入口与购买弹窗 */
+.member-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1777ff, #0d5ee0);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 22px -14px rgba(23, 119, 255, 0.9);
+  white-space: nowrap;
+}
+.member-nav-btn.is-member {
+  background: var(--primary-soft);
+  color: var(--primary);
+  box-shadow: none;
+}
+
+.member-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 15, 31, 0.58);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.member-modal {
+  width: min(420px, 100%);
+  padding: 26px 24px;
+  border-radius: 22px;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, 0.5);
+}
+.member-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.member-modal h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.member-modal-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  cursor: pointer;
+  font-size: 20px;
+}
+.member-plan {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #f7fbff, #eef6ff);
+  border: 1px solid rgba(23, 119, 255, 0.16);
+}
+.member-plan-name {
+  margin: 0;
+  color: #0d5ee0;
+  font-size: 14px;
+  font-weight: 800;
+}
+.member-price {
+  margin: 8px 0 0;
+  font-size: 34px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+}
+.member-price small {
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+}
+.member-benefits {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  color: #475569;
+  font-size: 13px;
+}
+.member-benefits li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.member-benefits li::before {
+  content: "✓";
+  color: #16a34a;
+  font-weight: 900;
+}
+.member-pay-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+.member-pay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.member-pay-btn.alipay {
+  background: #1677ff;
+  color: #ffffff;
+}
+.member-pay-btn.wechat {
+  background: #07c160;
+  color: #ffffff;
+}
+.member-pay-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.member-pay-link {
+  display: block;
+  margin-top: 12px;
+  text-align: center;
+  color: #0d5ee0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.member-modal-note {
+  margin: 16px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+@media (max-width: 520px) {
+  .member-nav-btn {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}

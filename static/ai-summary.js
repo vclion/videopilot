@@ -1,5 +1,7 @@
-/* AI 视频总结区块逻辑（新增文件，不改动 app.js 现有逻辑） */
+/* AI 视频总结区块逻辑（解析成功后自动触发） */
 (function () {
+  "use strict";
+
   const $ = (selector) => document.querySelector(selector);
 
   const section = $("#ai-summary-section");
@@ -9,6 +11,7 @@
   const resultBox = $("#ai-summary-result");
   const errorBox = $("#ai-summary-error");
   const btn = $("#ai-summary-btn");
+  const retryBtn = $("#ai-summary-retry");
   const badge = $("#ai-source-badge");
 
   let pollTimer = null;
@@ -26,8 +29,8 @@
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+      .replaceAll(String.fromCharCode(34), "&quot;")
+      .replaceAll(String.fromCharCode(39), "&#039;");
   }
 
   function resetPanel() {
@@ -38,6 +41,7 @@
     hide(loading);
     hide(resultBox);
     hide(errorBox);
+    hide(retryBtn);
     show(idle);
     show(section);
     if (badge) {
@@ -45,21 +49,15 @@
       badge.classList.add("is-hidden");
     }
     if (btn) btn.disabled = false;
-  }
-
-  // 每次解析出新的视频结果时，自动重置 AI 区块
-  const resultCard = $("#result-card");
-  if (resultCard && "MutationObserver" in window) {
-    new MutationObserver(() => {
-      if (!resultCard.classList.contains("is-hidden")) resetPanel();
-    }).observe(resultCard, { attributes: true, attributeFilter: ["class"] });
+    if (retryBtn) retryBtn.disabled = false;
   }
 
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      headers: { "Content-Type": "application/json" },
-      ...options,
-    });
+    const token = window.Member && window.Member.getToken ? await window.Member.getToken() : null;
+    const authHeaders = window.Auth && window.Auth.getHeaders ? window.Auth.getHeaders() : {};
+    const headers = { "Content-Type": "application/json", ...authHeaders };
+    if (token) headers["X-Member-Token"] = token;
+    const response = await fetch(path, { headers, ...options });
     let data = null;
     try {
       data = await response.json();
@@ -67,8 +65,9 @@
       data = null;
     }
     if (!response.ok) {
-      const detail = (data && data.detail) || `请求失败（${response.status}）`;
-      throw new Error(detail);
+      const error = new Error((data && data.detail) || `请求失败（${response.status}）`);
+      error.status = response.status;
+      throw error;
     }
     return data;
   }
@@ -135,11 +134,17 @@
   }
 
   function showError(message) {
+    if (pollTimer) {
+      window.clearInterval(pollTimer);
+      pollTimer = null;
+    }
     hide(loading);
     hide(resultBox);
     errorBox.textContent = message || "总结失败，请稍后重试";
     show(errorBox);
+    show(retryBtn);
     if (btn) btn.disabled = false;
+    if (retryBtn) retryBtn.disabled = false;
   }
 
   function pollTask(taskId) {
@@ -170,18 +175,22 @@
     }, 1500);
   }
 
-  function startSummary() {
-    // state 由 app.js 定义（经典脚本顶层 const，可跨脚本访问）
+  async function startSummary() {
     if (!state || !state.parsed) return;
+
+    const member = window.Member && window.Member.ensureMember ? await window.Member.ensureMember() : { ok: true };
+    if (!member.ok) return;
 
     const urlInput = $("#url-input");
     const url = state.parsed.webpage_url || (urlInput ? urlInput.value.trim() : "");
     if (!url) return;
 
     if (btn) btn.disabled = true;
+    if (retryBtn) retryBtn.disabled = true;
     hide(idle);
     hide(resultBox);
     hide(errorBox);
+    hide(retryBtn);
     show(section);
     show(loading);
     loadingText.textContent = "正在获取视频字幕";
@@ -195,9 +204,23 @@
         pollTask(task.id);
       })
       .catch((error) => {
-        showError(error.message || "创建总结任务失败");
+        if (error.status === 403 && window.Member && window.Member.ensureMember) {
+          resetPanel();
+          window.Member.ensureMember();
+        } else {
+          showError(error.message || "创建总结任务失败");
+        }
       });
   }
 
+  function handleParsed() {
+    resetPanel();
+  }
+
+  window.addEventListener("video:parsed", handleParsed);
+
   if (btn) btn.addEventListener("click", startSummary);
+  if (retryBtn) retryBtn.addEventListener("click", startSummary);
+
+  window.startAiSummary = startSummary;
 })();

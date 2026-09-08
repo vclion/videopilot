@@ -13,10 +13,12 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+import auth
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
+import membership
 from ai_summary import generate_summary, is_configured
 from subtitle import SubtitleError, fetch_subtitles
 
@@ -62,10 +64,12 @@ def _public_task(task: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/summarize")
-def create_summarize(payload: SummarizeRequest) -> dict[str, Any]:
+def create_summarize(payload: SummarizeRequest, x_member_token: str | None = Header(default=None), user: dict | None = Depends(auth.get_optional_user)) -> dict[str, Any]:
     url = payload.url.strip()
     if not (url.startswith("http://") or url.startswith("https://")):
         raise HTTPException(status_code=400, detail="请输入有效的 http/https 链接")
+    if not membership.is_member_active(x_member_token, user_id=user["id"] if user else None):
+        raise HTTPException(status_code=403, detail="会员专属功能，请先开通会员")
     if not is_configured():
         raise HTTPException(
             status_code=400,
@@ -75,6 +79,8 @@ def create_summarize(payload: SummarizeRequest) -> dict[str, Any]:
     task_id = _new_task_id()
     task: dict[str, Any] = {
         "id": task_id,
+        "user_token": (x_member_token or "").strip(),
+        "user_id": user["id"] if user else None,
         "url": url,
         "status": "queued",
         "source": None,
@@ -125,12 +131,20 @@ def _run_summarize(task_id: str, url: str) -> None:
 
 
 @router.get("/task/{task_id}")
-def get_summarize_task(task_id: str) -> dict[str, Any]:
+def get_summarize_task(task_id: str, x_member_token: str | None = Header(default=None), user: dict | None = Depends(auth.get_optional_user)) -> dict[str, Any]:
     with AI_TASKS_LOCK:
         task = AI_TASKS.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    if not _can_access_task(task, x_member_token, user):
+        raise HTTPException(status_code=403, detail="会员专属功能，请先开通会员")
     return _public_task(task)
+
+
+def _can_access_task(task: dict[str, Any], token: str | None, user: dict | None) -> bool:
+    if user:
+        return task.get("user_id") == user["id"] and membership.is_member_active(user_id=user["id"])
+    return task.get("user_token") == (token or "").strip() and membership.is_member_active(token=token)
 
 
 def _render_markdown(task: dict[str, Any]) -> str:
@@ -171,11 +185,15 @@ def _render_markdown(task: dict[str, Any]) -> str:
 def export_summary(
     task_id: str,
     fmt: str = Query(default="md", pattern="^(md|txt)$"),
+    x_member_token: str | None = Header(default=None),
+    user: dict | None = Depends(auth.get_optional_user),
 ) -> PlainTextResponse:
     with AI_TASKS_LOCK:
         task = AI_TASKS.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
+    if not _can_access_task(task, x_member_token, user):
+        raise HTTPException(status_code=403, detail="会员专属功能，请先开通会员")
     if task.get("status") != "completed" or not task.get("result"):
         raise HTTPException(status_code=409, detail="总结尚未完成")
 
