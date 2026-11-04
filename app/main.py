@@ -8,18 +8,22 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 import yt_dlp
-import auth
-import membership
-from auth_routes import router as auth_router
-from member_routes import router as member_router
-from douyin import (
+from . import auth
+from . import membership
+from .auth_routes import router as auth_router
+from .member_routes import router as member_router
+from .douyin import (
     download as download_douyin,
     extract_info as extract_douyin_info,
     is_douyin_url,
 )
-from ai_routes import router as ai_router
+from .ai_routes import router as ai_router
+from .agent_routes import router as agent_router
+from .subtitle_routes import router as subtitle_router
+from . import agent_store
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -27,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
-BASE_DIR = Path(__file__).resolve().parent
+from .paths import PROJECT_ROOT as BASE_DIR
 STATIC_DIR = BASE_DIR / "static"
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,8 +60,10 @@ class DownloadRequest(BaseModel):
 
 
 app = FastAPI(title="Free Videos Downloader", version="0.1.0")
-membership.init_db()
 auth.init_db()
+membership.init_db()
+agent_store.init_db()
+agent_store.recover_stale_runs()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -78,6 +84,28 @@ def _new_task_id() -> str:
 def _is_http_url(url: str) -> bool:
     value = url.strip()
     return value.startswith("http://") or value.startswith("https://")
+
+
+def _is_bilibili_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower().rstrip(".")
+    return host == "bilibili.com" or host.endswith(".bilibili.com")
+
+
+def _bilibili_headers(url: str) -> dict[str, str]:
+    if not _is_bilibili_url(url):
+        return {}
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.bilibili.com/",
+    }
+    sessdata = os.getenv("BILIBILI_SESSDATA", "").strip()
+    if sessdata:
+        headers["Cookie"] = f"SESSDATA={sessdata}"
+    return headers
 
 
 def _update_task(task_id: str, **fields: Any) -> None:
@@ -115,6 +143,9 @@ def _extract_info(url: str) -> dict[str, Any]:
         "noplaylist": True,
         "socket_timeout": 20,
     }
+    bilibili_headers = _bilibili_headers(url)
+    if bilibili_headers:
+        options["http_headers"] = bilibili_headers
     with yt_dlp.YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=False)
         if info is None:
@@ -363,6 +394,9 @@ def _run_download(task_id: str, payload: DownloadRequest) -> None:
             "outtmpl": str(DOWNLOAD_DIR / f"{task_id}.%(ext)s"),
             "progress_hooks": [_progress_hook(task_id)],
         }
+        bilibili_headers = _bilibili_headers(payload.url)
+        if bilibili_headers:
+            options["http_headers"] = bilibili_headers
 
         if payload.kind == "audio":
             options["format"] = payload.format_id or "bestaudio/best"
@@ -484,6 +518,8 @@ def llms_full_txt() -> Response:
 app.include_router(member_router)
 app.include_router(auth_router)
 app.include_router(ai_router)
+app.include_router(agent_router)
+app.include_router(subtitle_router)
 
 
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")

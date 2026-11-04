@@ -4,12 +4,12 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-import auth
+from . import auth
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-import membership
+from . import membership
 
 router = APIRouter(prefix="/api", tags=["membership"])
 

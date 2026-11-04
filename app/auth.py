@@ -15,15 +15,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pathlib import Path
 from typing import Any
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "membership.db"
+from .paths import PROJECT_ROOT as BASE_DIR, database_path
+DB_PATH = database_path("membership.db")
 LOCK = threading.Lock()
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me-please-32chars")
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
 JWT_EXPIRES_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", "10080"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@example.com")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "wcldsg666")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -49,7 +49,26 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
+def _jwt_secret() -> str:
+    placeholders = ("change-me", "changeme", "replace-me", "your-secret")
+    if len(JWT_SECRET) < 32 or any(value in JWT_SECRET.lower() for value in placeholders):
+        raise RuntimeError("请配置 JWT_SECRET：使用至少 32 位的随机字符串，不可使用示例占位值")
+    if JWT_EXPIRES_MINUTES <= 0:
+        raise RuntimeError("JWT_EXPIRES_MINUTES 必须为正整数")
+    return JWT_SECRET
+
+
+def _validate_admin_config() -> None:
+    if not ADMIN_USERNAME.strip():
+        raise RuntimeError("首次创建管理员时必须配置 ADMIN_USERNAME")
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", ADMIN_EMAIL):
+        raise RuntimeError("首次创建管理员时必须配置有效的 ADMIN_EMAIL")
+    if len(ADMIN_PASSWORD.strip()) < 12 or len(ADMIN_PASSWORD.encode("utf-8")) > 72:
+        raise RuntimeError("首次创建管理员时必须配置 ADMIN_PASSWORD：至少 12 位且不超过 72 个 UTF-8 字节")
+
+
 def init_db() -> None:
+    _jwt_secret()
     with LOCK:
         conn = _connect()
         try:
@@ -63,8 +82,9 @@ def init_db() -> None:
                 " created_at INTEGER NOT NULL\n"
                 ")"
             )
-            existing = conn.execute("SELECT id FROM users WHERE username = ?", (ADMIN_USERNAME,)).fetchone()
+            existing = conn.execute("SELECT id, role FROM users WHERE username = ?", (ADMIN_USERNAME,)).fetchone()
             if not existing:
+                _validate_admin_config()
                 conn.execute(
                     "INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                     (
@@ -76,6 +96,8 @@ def init_db() -> None:
                         _now(),
                     ),
                 )
+            elif existing["role"] != "admin":
+                raise RuntimeError("ADMIN_USERNAME 已被普通账号使用，请配置其他管理员用户名")
             conn.commit()
         finally:
             conn.close()
@@ -87,12 +109,12 @@ def create_access_token(user_id: str) -> str:
         "exp": _now() + JWT_EXPIRES_MINUTES * 60,
         "iat": _now(),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
     except jwt.PyJWTError as exc:
         raise HTTPException(status_code=401, detail="登录状态已失效，请重新登录") from exc
 

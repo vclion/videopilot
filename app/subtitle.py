@@ -12,17 +12,19 @@ import os
 import re
 import tempfile
 from pathlib import Path
-from typing import Any
-from urllib.parse import urlparse
+from typing import Any, Callable
+from urllib.parse import parse_qs, urlparse
 
 import requests
 import yt_dlp
 from dotenv import load_dotenv
 
-from douyin import is_douyin_url
+from .douyin import is_douyin_url
+from . import subtitle_store
+from .video_media import load_segments, normalize_segments
 
 
-BASE_DIR = Path(__file__).resolve().parent
+from .paths import PROJECT_ROOT as BASE_DIR
 load_dotenv(BASE_DIR / ".env")
 
 BILIBILI_SESSDATA = os.getenv("BILIBILI_SESSDATA", "").strip()
@@ -109,7 +111,7 @@ def _join_bili_body(body: list[dict[str, Any]]) -> str:
     return "\n".join(part for part in parts if part)
 
 
-def _fetch_bilibili_with_credential(ident: tuple[str, str]) -> dict[str, Any]:
+def _fetch_bilibili_with_credential(ident: tuple[str, str], page_index: int = 0) -> dict[str, Any]:
     """使用 .env 中的 SESSDATA 获取 B 站字幕（可拿到 AI 自动字幕）。"""
     import asyncio
 
@@ -125,7 +127,7 @@ def _fetch_bilibili_with_credential(ident: tuple[str, str]) -> dict[str, Any]:
             video_obj = bvideo.Video(bvid=ident[1], credential=credential)
         else:
             video_obj = bvideo.Video(aid=int(ident[1]), credential=credential)
-        cid = await video_obj.get_cid(page_index=0)
+        cid = await video_obj.get_cid(page_index=page_index)
         info = await video_obj.get_info()
         subtitle_info = await video_obj.get_subtitle(cid=cid) or {}
         subtitles = (
@@ -134,7 +136,7 @@ def _fetch_bilibili_with_credential(ident: tuple[str, str]) -> dict[str, Any]:
             else []
         )
         if not subtitles:
-            raise SubtitleError("该 B 站视频暂无可用的字幕")
+            raise SubtitleError("B 站字幕接口未返回字幕轨道")
         return video_obj, info, subtitles
 
     try:
@@ -151,6 +153,7 @@ def _fetch_bilibili_with_credential(ident: tuple[str, str]) -> dict[str, Any]:
         "language": picked.get("lan") or "",
         "title": info.get("title") or "",
         "transcript": _join_bili_body(body),
+        "segments": normalize_segments(body),
     }
 
 
@@ -197,7 +200,7 @@ def _bilibili_anonymous_subtitles(bvid: str, cid: int) -> list[dict[str, Any]]:
         return []
 
 
-def _fetch_bilibili_anonymous(ident: tuple[str, str]) -> dict[str, Any]:
+def _fetch_bilibili_anonymous(ident: tuple[str, str], page_index: int = 0) -> dict[str, Any]:
     """匿名链路：view 拿 cid -> 尝试字幕列表。"""
     if ident[0] == "bvid":
         view_params = {"bvid": ident[1]}
@@ -212,7 +215,10 @@ def _fetch_bilibili_anonymous(ident: tuple[str, str]) -> dict[str, Any]:
     )
     response.raise_for_status()
     data = (response.json() or {}).get("data") or {}
-    cid = data.get("cid")
+    pages = data.get("pages") or []
+    if page_index and page_index >= len(pages):
+        raise SubtitleError("视频分 P 不存在")
+    cid = pages[page_index].get("cid") if pages else data.get("cid")
     bvid = data.get("bvid")
     if not cid or not bvid:
         raise SubtitleError("未能解析该 B 站视频信息")
@@ -231,6 +237,7 @@ def _fetch_bilibili_anonymous(ident: tuple[str, str]) -> dict[str, Any]:
         "language": picked.get("lan") or "",
         "title": data.get("title") or "",
         "transcript": _join_bili_body(body),
+        "segments": normalize_segments(body),
     }
 
 
@@ -238,16 +245,23 @@ def _fetch_bilibili(url: str) -> dict[str, Any]:
     ident = _bilibili_id(url)
     if not ident:
         raise SubtitleError("未能从链接中识别 B 站视频 ID")
+    try:
+        page_index = int(parse_qs(urlparse(url).query).get("p", ["1"])[0]) - 1
+        if page_index < 0:
+            raise ValueError
+    except ValueError as exc:
+        raise SubtitleError("视频分 P 参数无效") from exc
 
     if BILIBILI_SESSDATA:
         try:
-            return _fetch_bilibili_with_credential(ident)
+            return _fetch_bilibili_with_credential(ident, page_index=page_index)
         except SubtitleError as exc:
             message = str(exc)
-            if "暂无可用的字幕" in message:
+            if "字幕接口未返回字幕轨道" in message:
                 raise SubtitleError(
-                    "该 B 站视频暂无可用的字幕（已尝试使用登录态获取；"
-                    "若 Cookie 已过期，请更新 .env 中的 BILIBILI_SESSDATA）"
+                    "该 B 站视频没有可读取的字幕轨道。"
+                    "如果字幕是直接显示在画面中的烧录字幕，需要使用语音转写或画面 OCR；"
+                    "这不是 Cookie 过期导致的。"
                 ) from exc
             if "登录态" in message:
                 raise SubtitleError(
@@ -255,7 +269,7 @@ def _fetch_bilibili(url: str) -> dict[str, Any]:
                 ) from exc
             raise
 
-    return _fetch_bilibili_anonymous(ident)
+    return _fetch_bilibili_anonymous(ident, page_index=page_index)
 
 
 def _rank_subtitle_file(path: Path) -> tuple[int, int, str]:
@@ -274,6 +288,10 @@ def _rank_subtitle_file(path: Path) -> tuple[int, int, str]:
 
 
 def _parse_subtitle_file(path: Path) -> str:
+    try:
+        return "\n".join(item["text"] for item in load_segments(path))
+    except (ValueError, OSError):
+        pass
     text = path.read_text(encoding="utf-8", errors="ignore")
 
     # JSON 字幕（部分平台/库会输出）
@@ -345,6 +363,10 @@ def _fetch_ytdlp(url: str) -> dict[str, Any]:
             raise SubtitleError("该视频没有可用的字幕（手动字幕和自动生成字幕均未找到）")
 
         chosen = min(files, key=_rank_subtitle_file)
+        try:
+            segments = load_segments(chosen)
+        except (ValueError, OSError):
+            segments = []
         transcript = _parse_subtitle_file(chosen)
         if not transcript.strip():
             raise SubtitleError("字幕内容为空，无法生成总结")
@@ -354,6 +376,7 @@ def _fetch_ytdlp(url: str) -> dict[str, Any]:
             "language": _language_from_filename(chosen.name),
             "title": title,
             "transcript": _truncate(transcript),
+            "segments": segments,
         }
 
 
@@ -373,7 +396,7 @@ def _truncate(transcript: str) -> str:
     return transcript[:MAX_TRANSCRIPT_CHARS] + "\n\n（字幕过长，已截断）"
 
 
-def fetch_subtitles(url: str) -> dict[str, Any]:
+def _fetch_subtitles_uncached(url: str, on_stage: Callable[[str], None] | None = None) -> dict[str, Any]:
     """获取字幕，返回 {source, language, title, transcript}，失败抛 SubtitleError。"""
     url = url.strip()
     if is_douyin_url(url):
@@ -400,6 +423,46 @@ def fetch_subtitles(url: str) -> dict[str, Any]:
             pass
         except Exception:
             pass
+        try:
+            from .asr import ASRError, is_enabled, transcribe_url
+
+            if is_enabled():
+                if on_stage:
+                    on_stage("transcribing_audio")
+                return transcribe_url(url)
+        except ASRError as exc:
+            raise SubtitleError(f"{first_error}；备用语音转写失败：{exc}") from exc
+        except Exception:
+            pass
         raise first_error
 
-    return _fetch_ytdlp(url)
+    try:
+        return _fetch_ytdlp(url)
+    except SubtitleError as first_error:
+        try:
+            from .asr import ASRError, is_enabled, transcribe_url
+
+            if is_enabled():
+                if on_stage:
+                    on_stage("transcribing_audio")
+                return transcribe_url(url)
+        except ASRError as exc:
+            raise SubtitleError(f"{first_error}；备用语音转写失败：{exc}") from exc
+        except Exception:
+            pass
+        raise
+
+
+def fetch_subtitles(
+    url: str, on_stage: Callable[[str], None] | None = None, *, require_timestamps: bool = False,
+) -> dict[str, Any]:
+    """优先读取 SQLite 字幕缓存，未命中时才执行真实提取。"""
+    normalized_url = url.strip()
+    cached = subtitle_store.get(normalized_url)
+    if cached and (not require_timestamps or cached.get("segments")):
+        if on_stage:
+            on_stage("cache_hit")
+        return cached
+
+    result = _fetch_subtitles_uncached(normalized_url, on_stage=on_stage)
+    return subtitle_store.save(normalized_url, result)

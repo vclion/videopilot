@@ -13,8 +13,17 @@
   const btn = $("#ai-summary-btn");
   const retryBtn = $("#ai-summary-retry");
   const badge = $("#ai-source-badge");
+  const subtitleBtn = $("#subtitle-btn");
+  const subtitleLoading = $("#subtitle-loading");
+  const subtitleLoadingText = $("#subtitle-loading-text");
+  const subtitleResult = $("#subtitle-result");
+  const subtitleFilePath = $("#subtitle-file-path");
+  const subtitleFileLink = $("#subtitle-file-link");
+  const subtitleError = $("#subtitle-error");
+  const subtitleBtnLabel = subtitleBtn ? subtitleBtn.querySelector(".ai-summary-btn-label") : null;
 
   let pollTimer = null;
+  let subtitlePollTimer = null;
 
   function show(element) {
     if (element) element.classList.remove("is-hidden");
@@ -22,6 +31,18 @@
 
   function hide(element) {
     if (element) element.classList.add("is-hidden");
+  }
+
+  function setSubtitleButtonState(stateName) {
+    if (!subtitleBtn) return;
+    const labels = {
+      idle: "提取字幕",
+      loading: "提取中...",
+      success: "提取成功",
+    };
+    subtitleBtn.disabled = stateName !== "idle";
+    subtitleBtn.classList.toggle("is-success", stateName === "success");
+    if (subtitleBtnLabel) subtitleBtnLabel.textContent = labels[stateName] || labels.idle;
   }
 
   function escapeHtml(value) {
@@ -38,10 +59,22 @@
       window.clearInterval(pollTimer);
       pollTimer = null;
     }
+    if (subtitlePollTimer) {
+      window.clearInterval(subtitlePollTimer);
+      subtitlePollTimer = null;
+    }
     hide(loading);
     hide(resultBox);
     hide(errorBox);
     hide(retryBtn);
+    hide(subtitleLoading);
+    hide(subtitleResult);
+    hide(subtitleError);
+    hide(subtitleFilePath);
+    if (subtitleFileLink) {
+      subtitleFileLink.removeAttribute("href");
+      subtitleFileLink.textContent = "字幕文件地址";
+    }
     show(idle);
     show(section);
     if (badge) {
@@ -50,6 +83,7 @@
     }
     if (btn) btn.disabled = false;
     if (retryBtn) retryBtn.disabled = false;
+    setSubtitleButtonState("idle");
   }
 
   async function api(path, options = {}) {
@@ -72,11 +106,40 @@
     return data;
   }
 
+  async function restoreCachedHistory(url) {
+    if (!url) return;
+    try {
+      const cached = await api(`/api/ai/history?url=${encodeURIComponent(url)}`);
+      if (cached.subtitle) {
+        renderSubtitles({
+          source: cached.subtitle.source,
+          result: cached.subtitle.result || {},
+        });
+        setSubtitleButtonState("success");
+      }
+      if (cached.summary) {
+        hide(idle);
+        hide(loading);
+        hide(errorBox);
+        hide(retryBtn);
+        renderResult({
+          cached: true,
+          url,
+          source: cached.summary.source,
+          result: cached.summary.result || {},
+        });
+      }
+    } catch {
+      // 历史缓存读取失败不应阻断正常的字幕提取和总结流程。
+    }
+  }
+
   function renderResult(task) {
     const result = task.result || {};
     const sourceMap = {
       bilibili_api: "B站平台字幕",
       yt_dlp: "yt-dlp 字幕",
+      faster_whisper: "本地语音转写",
     };
     const sourceText = task.source ? sourceMap[task.source] || task.source : "";
     badge.textContent = sourceText ? `字幕来源：${sourceText}` : "";
@@ -125,9 +188,10 @@
       );
     }
 
-    parts.push(
-      `<div class="ai-export-row"><a class="ai-export-link" href="/api/ai/export/${encodeURIComponent(task.id)}?fmt=md">导出 Markdown 总结</a></div>`,
-    );
+    const exportUrl = task.cached
+      ? `/api/ai/export-cache?url=${encodeURIComponent(task.url)}&fmt=md`
+      : `/api/ai/export/${encodeURIComponent(task.id)}?fmt=md`;
+    parts.push(`<div class="ai-export-row"><a class="ai-export-link" href="${exportUrl}">导出 Markdown 总结</a></div>`);
 
     resultBox.innerHTML = parts.join("");
     show(resultBox);
@@ -147,6 +211,80 @@
     if (retryBtn) retryBtn.disabled = false;
   }
 
+  function renderSubtitles(task) {
+    const result = task.result || {};
+    if (result.transcript_url && subtitleFileLink) {
+      subtitleFileLink.href = result.transcript_url;
+      subtitleFileLink.textContent = result.transcript_path || result.transcript_file || "字幕文件地址";
+      show(subtitleFilePath);
+    } else {
+      hide(subtitleFilePath);
+    }
+    show(subtitleResult);
+  }
+
+  function showSubtitleError(message) {
+    if (subtitlePollTimer) {
+      window.clearInterval(subtitlePollTimer);
+      subtitlePollTimer = null;
+    }
+    hide(subtitleLoading);
+    subtitleError.textContent = message || "字幕提取失败，请稍后重试";
+    show(subtitleError);
+    setSubtitleButtonState("idle");
+  }
+
+  function pollSubtitleTask(taskId) {
+    if (subtitlePollTimer) window.clearInterval(subtitlePollTimer);
+    subtitlePollTimer = window.setInterval(async () => {
+      try {
+        const task = await api(`/api/subtitles/task/${encodeURIComponent(taskId)}`);
+        if (task.status === "fetching_subtitle") {
+          subtitleLoadingText.textContent = "正在提取视频字幕";
+        } else if (task.status === "cache_hit") {
+          subtitleLoadingText.textContent = "正在读取历史字幕";
+        } else if (task.status === "transcribing_audio") {
+          subtitleLoadingText.textContent = "正在下载音频并进行语音转写";
+        } else if (task.status === "completed") {
+          window.clearInterval(subtitlePollTimer);
+          subtitlePollTimer = null;
+          hide(subtitleLoading);
+          hide(subtitleError);
+          renderSubtitles(task);
+          setSubtitleButtonState("success");
+        } else if (task.status === "failed") {
+          showSubtitleError(task.error);
+        }
+      } catch (error) {
+        showSubtitleError(error.message || "查询字幕任务失败");
+      }
+    }, 1200);
+  }
+
+  async function startSubtitleExtraction() {
+    if (!state || !state.parsed) return;
+
+    const urlInput = $("#url-input");
+    const url = state.parsed.webpage_url || (urlInput ? urlInput.value.trim() : "");
+    if (!url) return;
+
+    setSubtitleButtonState("loading");
+    hide(subtitleResult);
+    hide(subtitleError);
+    show(subtitleLoading);
+    subtitleLoadingText.textContent = "正在提取视频字幕";
+
+    try {
+      const task = await api("/api/subtitles", {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
+      pollSubtitleTask(task.id);
+    } catch (error) {
+      showSubtitleError(error.message || "创建字幕任务失败");
+    }
+  }
+
   function pollTask(taskId) {
     if (pollTimer) window.clearInterval(pollTimer);
     pollTimer = window.setInterval(async () => {
@@ -154,6 +292,8 @@
         const task = await api(`/api/ai/task/${encodeURIComponent(taskId)}`);
         if (task.status === "fetching_subtitle") {
           loadingText.textContent = "正在获取视频字幕";
+        } else if (task.status === "transcribing_audio") {
+          loadingText.textContent = "正在下载音频并进行语音转写";
         } else if (task.status === "summarizing") {
           loadingText.textContent = "AI 正在生成总结";
         } else if (task.status === "completed") {
@@ -213,14 +353,17 @@
       });
   }
 
-  function handleParsed() {
+  function handleParsed(event) {
     resetPanel();
+    const url = event.detail?.webpage_url || $("#url-input")?.value.trim() || "";
+    restoreCachedHistory(url);
   }
 
   window.addEventListener("video:parsed", handleParsed);
 
   if (btn) btn.addEventListener("click", startSummary);
   if (retryBtn) retryBtn.addEventListener("click", startSummary);
+  if (subtitleBtn) subtitleBtn.addEventListener("click", startSubtitleExtraction);
 
   window.startAiSummary = startSummary;
 })();

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import membership
-from auth import (
+from . import membership
+from .auth import (
     authenticate,
     create_access_token,
     get_current_user,

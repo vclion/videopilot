@@ -11,16 +11,19 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
-import auth
+from . import auth
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-import membership
-from ai_summary import generate_summary, is_configured
-from subtitle import SubtitleError, fetch_subtitles
+from . import membership
+from . import subtitle_store
+from .ai_summary import generate_summary, is_configured
+from .subtitle import SubtitleError, fetch_subtitles
 
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -108,7 +111,10 @@ def create_summarize(payload: SummarizeRequest, x_member_token: str | None = Hea
 def _run_summarize(task_id: str, url: str) -> None:
     try:
         _update_task(task_id, status="fetching_subtitle")
-        subtitles = fetch_subtitles(url)
+        subtitles = fetch_subtitles(
+            url,
+            on_stage=lambda status: _update_task(task_id, status=status),
+        )
 
         transcript = (subtitles.get("transcript") or "").strip()
         if not transcript:
@@ -123,6 +129,17 @@ def _run_summarize(task_id: str, url: str) -> None:
         )
 
         result = generate_summary(subtitles.get("title", ""), transcript)
+        try:
+            subtitle_store.save_summary(
+                url=url,
+                title=subtitles.get("title", ""),
+                source=subtitles.get("source", ""),
+                language=subtitles.get("language", ""),
+                result=result,
+            )
+        except Exception:
+            # 总结已生成时，缓存写入失败不应让用户丢失本次结果。
+            pass
         _update_task(task_id, status="completed", result=result, finished_at=_now())
     except (SubtitleError, RuntimeError) as exc:
         _update_task(task_id, status="failed", error=str(exc), finished_at=_now())
@@ -145,6 +162,50 @@ def _can_access_task(task: dict[str, Any], token: str | None, user: dict | None)
     if user:
         return task.get("user_id") == user["id"] and membership.is_member_active(user_id=user["id"])
     return task.get("user_token") == (token or "").strip() and membership.is_member_active(token=token)
+
+
+def _cached_subtitle(url: str) -> dict[str, Any] | None:
+    cached = subtitle_store.get(url)
+    if not cached:
+        return None
+    transcript_file = cached.get("transcript_file") or ""
+    filename = Path(transcript_file).name
+    result = {
+        "transcript_file": transcript_file,
+        "segments_file": cached.get("segments_file"),
+        "transcript_path": cached.get("transcript_path"),
+        "transcript_url": f"/api/subtitles/file/{quote(filename)}" if filename else None,
+        "segments": cached.get("segments") or [],
+    }
+    return {
+        "source": cached.get("source"),
+        "language": cached.get("language"),
+        "title": cached.get("title"),
+        "result": result,
+        "created_at": cached.get("created_at"),
+        "updated_at": cached.get("updated_at"),
+    }
+
+
+@router.get("/history")
+def get_cached_ai_history(
+    url: str,
+    x_member_token: str | None = Header(default=None),
+    user: dict | None = Depends(auth.get_optional_user),
+) -> dict[str, Any]:
+    """解析视频后恢复历史字幕和总结；总结仍遵循会员权限。"""
+    url = url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(status_code=400, detail="请输入有效的 http/https 链接")
+
+    summary = None
+    if membership.is_member_active(x_member_token, user_id=user["id"] if user else None):
+        summary = subtitle_store.get_summary(url)
+    return {
+        "url": url,
+        "subtitle": _cached_subtitle(url),
+        "summary": summary,
+    }
 
 
 def _render_markdown(task: dict[str, Any]) -> str:
@@ -204,6 +265,33 @@ def export_summary(
         content = (task.get("result") or {}).get("summary", "")
         filename = "video-summary.txt"
 
+    return PlainTextResponse(
+        content=content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export-cache")
+def export_cached_summary(
+    url: str,
+    fmt: str = Query(default="md", pattern="^(md|txt)$"),
+    x_member_token: str | None = Header(default=None),
+    user: dict | None = Depends(auth.get_optional_user),
+) -> PlainTextResponse:
+    if not membership.is_member_active(x_member_token, user_id=user["id"] if user else None):
+        raise HTTPException(status_code=403, detail="会员专属功能，请先开通会员")
+    cached = subtitle_store.get_summary(url.strip())
+    if not cached:
+        raise HTTPException(status_code=404, detail="历史总结不存在")
+
+    task = {"title": cached.get("title"), "result": cached.get("result") or {}}
+    if fmt == "md":
+        content = _render_markdown(task)
+        filename = "video-summary.md"
+    else:
+        content = task["result"].get("summary", "")
+        filename = "video-summary.txt"
     return PlainTextResponse(
         content=content,
         media_type="text/plain; charset=utf-8",

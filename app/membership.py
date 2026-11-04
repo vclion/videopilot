@@ -9,8 +9,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "membership.db"
+from .paths import PROJECT_ROOT as BASE_DIR, database_path
+DB_PATH = database_path("membership.db")
 LOCK = threading.Lock()
 
 PLAN_DAYS = int(os.getenv("MEMBERSHIP_PLAN_DAYS", "30"))

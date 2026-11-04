@@ -117,10 +117,11 @@
       ]
     }
     </script>
-    <link rel="stylesheet" href="/styles.css" />
-    <link rel="stylesheet" href="/ai-styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=20260920-3" />
+    <link rel="stylesheet" href="/ai-styles.css?v=20260919-6" />
     <link rel="stylesheet" href="/membership.css" />
     <link rel="stylesheet" href="/auth.css" />
+    <link rel="stylesheet" href="/agent-styles.css?v=20260920-4" />
   </head>
   <body>
     <div class="page-shell">
@@ -256,33 +257,86 @@
               </div>
               <span class="ai-source-badge is-hidden" id="ai-source-badge"></span>
             </div>
-            <div class="ai-summary-idle" id="ai-summary-idle">
-              <p class="ai-summary-desc">
-                基于视频字幕，一键提取核心观点、章节要点与金句，快速掌握长视频内容。
-              </p>
-              <button class="ai-summary-btn" id="ai-summary-btn" type="button">
+            <div class="ai-summary-scroll">
+              <div class="ai-summary-idle" id="ai-summary-idle">
+                <p class="ai-summary-desc">
+                  可以先查看完整字幕，再基于字幕生成核心观点、章节要点与金句。
+                </p>
+                <div class="ai-action-row">
+                  <button class="ai-summary-btn subtitle-btn" id="subtitle-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M5 5.5A2.5 2.5 0 0 1 7.5 3h9A2.5 2.5 0 0 1 19 5.5v9a2.5 2.5 0 0 1-2.5 2.5H12l-4.5 4v-4h0A2.5 2.5 0 0 1 5 14.5v-9Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                      <path d="M8 8.5h8M8 12h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    <span class="ai-summary-btn-label">提取字幕</span>
+                  </button>
+                  <button class="ai-summary-btn" id="ai-summary-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                      <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+                    </svg>
+                    <span class="ai-summary-btn-label">生成 AI 总结</span>
+                  </button>
+                </div>
+              </div>
+              <div class="subtitle-loading is-hidden" id="subtitle-loading">
+                <div class="ai-summary-spinner"></div>
+                <div>
+                  <strong id="subtitle-loading-text">正在提取视频字幕</strong>
+                  <p>如果没有字幕轨道，将自动尝试语音转写</p>
+                </div>
+              </div>
+              <div class="subtitle-result is-hidden" id="subtitle-result">
+                <p class="subtitle-file-path is-hidden" id="subtitle-file-path">
+                  <a id="subtitle-file-link" href="#" target="_blank" rel="noopener noreferrer">字幕文件地址</a>
+                </p>
+              </div>
+              <div class="subtitle-error is-hidden" id="subtitle-error"></div>
+              <div class="ai-summary-loading is-hidden" id="ai-summary-loading">
+                <div class="ai-summary-spinner"></div>
+                <div>
+                  <strong id="ai-loading-text">正在获取视频字幕</strong>
+                  <p>根据视频长度不同，这一步通常需要几秒到几十秒</p>
+                </div>
+              </div>
+              <div class="ai-summary-result is-hidden" id="ai-summary-result"></div>
+              <div class="ai-summary-error is-hidden" id="ai-summary-error"></div>
+              <button class="ai-summary-btn ai-summary-retry is-hidden" id="ai-summary-retry" type="button">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1M7.7 16.3l-2.1 2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                  <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/>
+                  <path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                <span class="ai-summary-btn-label">生成 AI 总结</span>
+                <span class="ai-summary-btn-label">重新生成 AI 总结</span>
               </button>
             </div>
-            <div class="ai-summary-loading is-hidden" id="ai-summary-loading">
-              <div class="ai-summary-spinner"></div>
+          </section>
+          <section class="agent-section is-hidden" id="agent-section" aria-label="视频智能问答">
+            <div class="agent-head">
               <div>
-                <strong id="ai-loading-text">正在获取视频字幕</strong>
-                <p>根据视频长度不同，这一步通常需要几秒到几十秒</p>
+                <p class="ai-summary-kicker">VIDEO AGENT</p>
+                <h2 class="ai-summary-title">视频智能问答</h2>
+              </div>
+              <div class="agent-head-actions">
+                <button class="agent-session-btn" id="agent-new-session" type="button">新建话题</button>
+                <button class="agent-session-btn danger" id="agent-clear-session" type="button">清空记忆</button>
+                <span class="agent-status" id="agent-status">可提问</span>
               </div>
             </div>
-            <div class="ai-summary-result is-hidden" id="ai-summary-result"></div>
-            <div class="ai-summary-error is-hidden" id="ai-summary-error"></div>
-            <button class="ai-summary-btn ai-summary-retry is-hidden" id="ai-summary-retry" type="button">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span class="ai-summary-btn-label">重新生成 AI 总结</span>
-            </button>
+            <p class="agent-desc">让 Agent 基于视频内容回答问题，并将每轮问答保存为聊天记录。</p>
+            <div class="agent-session-panel">
+              <div class="agent-session-panel-head">
+                <strong>历史话题</strong>
+                <span id="agent-session-count">加载中</span>
+              </div>
+              <div class="agent-sessions" id="agent-sessions"></div>
+            </div>
+            <div class="agent-history" id="agent-history"></div>
+            <div class="agent-input-row">
+              <input id="agent-question" type="text" maxlength="2000" placeholder="例如：视频中提到的主要风险是什么？" />
+              <button class="ai-summary-btn" id="agent-ask-btn" type="button">询问 Agent</button>
+            </div>
+            <div class="agent-steps is-hidden" id="agent-steps"></div>
+            <div class="agent-result is-hidden" id="agent-result"></div>
+            <div class="agent-error is-hidden" id="agent-error"></div>
           </section>
           </div>
           <article class="progress-card is-hidden" id="progress-card">
@@ -446,6 +500,7 @@
     <script src="/app.js" defer></script>
     <script src="/auth.js" defer></script>
     <script src="/membership.js" defer></script>
-    <script src="/ai-summary.js" defer></script>
+    <script src="/ai-summary.js?v=20260920-2" defer></script>
+    <script src="/agent.js?v=20261002-3" defer></script>
   </body>
 </html>

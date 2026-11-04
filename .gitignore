@@ -2,7 +2,18 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
+.env.*
+!.env.example
 downloads/
+data/db/
+data/transcripts/
+data/video_validation/
+data/video_cache/
 *.log
 
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+tests/artifacts/

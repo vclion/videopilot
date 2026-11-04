@@ -1,0 +1,12 @@
+{
+  "cases": [
+    {
+      "title": "替换为你的测试视频标题",
+      "video": "../../downloads/your-video.mp4",
+      "subtitles": "../../data/transcripts/your-timed-subtitles.json",
+      "windows": [0, 1],
+      "question": "画面中出现了什么颜色的杯子，它被放在什么位置？",
+      "expected_answer": "请人工观看选定片段后填写；此字段不会发送给模型"
+    }
+  ]
+}
